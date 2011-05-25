@@ -3,7 +3,7 @@
 
 import gtk, gobject
 
-#import liblo
+import liblo
 from liblo import *
 import select, pybonjour
 REGTYPE = "_monome-osc._udp"
@@ -18,9 +18,10 @@ class Justosc(Server):
         Server.__init__(self, port=port)
         self.app_port = 8000
         self.app_host = "localhost"
-        self.prefix = "/monome"
+        self.prefix = "/monome" # /monome
         self.rotation = 0 # FIXME
         self.gui = gui
+        self.register_callbacks(self.prefix)
     
     @make_method('/sys/port', 'i')
     def sys_port(self, path, args):
@@ -35,8 +36,9 @@ class Justosc(Server):
     @make_method('/sys/prefix', 's')
     def sys_prefix(self, path, args):
         prefix, = args
+        self.unregister_callbacks(self.prefix)
         self.prefix = "/%s" % prefix.strip("/")
-        self.register_callbacks()
+        self.register_callbacks(self.prefix)
     
     @make_method('/sys/info', None)
     def sys_prefix(self, path, args):
@@ -48,16 +50,23 @@ class Justosc(Server):
             host, port = self.app_host, self.app_port
         else:
             return
+        target = liblo.Address(host, port)
         liblo.send(target, "/sys/port", port)
         liblo.send(target, "/sys/host", host)
         liblo.send(target, "/sys/id", "meme")
         liblo.send(target, "/sys/prefix", self.prefix)
     
-    def register_callbacks(self):
-        self.add_method("%s/grid/led/set" % self.prefix, "iii", self.grid_led_set)
-        self.add_method("%s/grid/led/map" % self.prefix, "iiiiiiiiii", self.grid_led_map)
-        self.add_method("%s/grid/led/row" % self.prefix, None, self.grid_led_row)
-        self.add_method("%s/grid/led/col" % self.prefix, None, self.grid_led_col)
+    def unregister_callbacks(self, prefix):
+        self.del_method("%s/grid/led/set" % prefix, "iii")
+        self.del_method("%s/grid/led/map" % prefix, "iiiiiiiiii")
+        self.del_method("%s/grid/led/row" % prefix, None)
+        self.del_method("%s/grid/led/col" % prefix, None)
+    
+    def register_callbacks(self, prefix):
+        self.add_method("%s/grid/led/set" % prefix, "iii", self.grid_led_set)
+        self.add_method("%s/grid/led/map" % prefix, "iiiiiiiiii", self.grid_led_map)
+        self.add_method("%s/grid/led/row" % prefix, None, self.grid_led_row)
+        self.add_method("%s/grid/led/col" % prefix, None, self.grid_led_col)
 
     def grid_led_set(self, path, args):
         x, y, s = args
@@ -94,6 +103,10 @@ class Justosc(Server):
         for b in range(len(bits)):
             bit = int(bits[b])
             self.grid_led_set(None, [x_offset, y_offset+b, bit])
+    
+    def grid_key(self, x, y, s):
+        target = liblo.Address(self.app_host, self.app_port)
+        liblo.send(target, "%s/grid/key" % self.prefix, x, y, s)
 
 class Meme(Server):
     def __init__(self, port, gui):
@@ -154,6 +167,7 @@ class MemeGui(gtk.Window):
     
     def button_clicked(self, b, x, y):
         print "clicked", b, x, y
+        self.s.server.grid_key(x, y, 1)
     
     def light_button(self, x, y):
         if x >= self.xsize or y >= self.ysize: return
@@ -175,7 +189,7 @@ class MemeGui(gtk.Window):
 
 gobject.type_register(MemeGui)
 
-w = MemeGui(10000, 8, 8)
+w = MemeGui(8080, 8, 8)
 w.show_all()
 gtk.main()
 
