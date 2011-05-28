@@ -1,2 +1,4 @@
 griddle is a splitter/spanner router app for grid devices.
 meme is a gtk monome emulator with arbitrary size support.
+
+now uses pyOSC (LGPL) from http://gitorious.org/pyosc
