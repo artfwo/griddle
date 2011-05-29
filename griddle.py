@@ -187,9 +187,8 @@ class MonomeWatcher:
 
 class Griddle:
     def __init__(self):
-        self.monomes    = {}
-        self.virtuals   = {}
-        self.vservices  = {}
+        self.devices    = {}
+        self.services   = {}
         self.offsets    = {}
         self.transtbl   = {}
         self.watcher = MonomeWatcher(self)
@@ -228,65 +227,52 @@ class Griddle:
     
     def add_virtual(self, name, xsize, ysize, port=0):
         device = VirtualMonome(name, xsize, ysize, port)
-        self.virtuals[name] = device
+        self.devices[name] = device
         
         sphost, spport = device.server_address
         service_name = '%s-%s' % (GRIDDLE_SERVICE_PREFIX, name)
-        self.vservices[name] = pybonjour.DNSServiceRegister(name=service_name,
+        self.services[name] = pybonjour.DNSServiceRegister(name=service_name,
             regtype=REGTYPE,
             port=port,
             callBack=None)
         print "creating %s (%d)" % (name, spport)
-        device.app_callback = self.virtual_callback
+        device.app_callback = self.universal_callback
 
     def monome_discovered(self, serviceName, host, port):
         name = serviceName.split()[1].strip('()') # take serial
         if not name in self.offsets: # only take affected devices
             return
         # FIXME: IPV4 and IPv6 are separate services and are resolved twice
-        if not self.monomes.has_key(name):
+        if not self.devices.has_key(name):
             # FIXME: assume localhost due to some local/real hostname weirdness
             monome = Monome(name, 'localhost', port)
             print "adding %s (%d)" % (name, port)
-            self.monomes[name] = monome
-            self.monomes[name].app_callback = self.monome_callback
+            self.devices[name] = monome
+            self.devices[name].app_callback = self.universal_callback
     
     def monome_removed(self, name):
         # FIXME: IPV4 and IPv6 are separate services and are removed twice
-        if self.monomes.has_key(name):
+        if self.devices.has_key(name):
             print "removing %s" % name
-            self.monomes[name].close()
-            del self.monomes[name]
+            self.devices[name].close()
+            del self.devices[name]
         return
     
-    def monome_callback(self, id, addr, tags, data):
+    def universal_callback(self, id, addr, tags, data):
+        if isinstance(self.devices[id], Monome):
+            sign = 1
+        else:
+            sign = -1
         for t in self.transtbl[id]:
-            #dev = self.virtuals[t]
-            #dev.waffle_send('%s%s' % (dev.target_prefix, addr), data)
-            
             vx_off, vy_off = self.offsets[id]
             dx_off, dy_off = self.offsets[t]
-            x_off = -vx_off + dx_off
-            y_off = -vy_off + dy_off
+            x_off = sign * (vx_off) + dx_off
+            y_off = sign * (vy_off) + dy_off
             
-            dev = self.virtuals[t]
-            
-            if addr.endswith("/grid/key"):
+            dev = self.devices[t]
+            if addr.endswith("grid/key"):
                 tr = translate_key(data, x_off, y_off, dev.xsize, dev.ysize)
-            
-            if tr is not None:
-                dev.waffle_send('%s%s' % (dev.target_prefix, addr), tr)
-    
-    def virtual_callback(self, id, addr, tags, data):
-        for t in self.transtbl[id]:
-            vx_off, vy_off = self.offsets[id]
-            dx_off, dy_off = self.offsets[t]
-            x_off = -vx_off + dx_off
-            y_off = -vy_off + dy_off
-            
-            dev = self.monomes[t]
-            
-            if addr.endswith("grid/led/set"):
+            elif addr.endswith("grid/led/set"):
                 tr = translate_led(data, x_off, y_off, dev.xsize, dev.ysize)
             elif addr.endswith("grid/led/row"):
                 tr = translate_row(data, x_off, y_off, dev.xsize, dev.ysize)
@@ -295,17 +281,15 @@ class Griddle:
             elif addr.endswith("grid/led/map"):
                 tr = translate_map(data, x_off, y_off, dev.xsize, dev.ysize)
             else:
-                print "else", addr, data
                 tr = data
             
             if tr is not None:
                 dev.waffle_send('%s%s' % (dev.target_prefix, addr), tr)
-
+    
     def run(self):
         while True:
-            rlist = itertools.chain(self.monomes.values(),
-                self.virtuals.values(),
-                self.vservices.values(),
+            rlist = itertools.chain(self.devices.values(),
+                self.services.values(),
                 [self.watcher.sdRef])
             ready = select.select(rlist, [], [])
             for r in ready[0]:
@@ -317,9 +301,8 @@ class Griddle:
                     raise RuntimeError("unknown stuff in select: %s", r)
     
     def close(self):
-        rlist = itertools.chain(self.monomes.values(),
-            self.virtuals.values(),
-            self.vservices.values(),
+        rlist = itertools.chain(self.devices.values(),
+            self.services.values(),
             [self.watcher.sdRef])
         for s in rlist:
             s.close()
