@@ -110,9 +110,9 @@ class Meme(OSCServer):
     
     # FIXME: need len(args) check
     def grid_led_col(self, addr, tags, data, client_address):
-        x_offset = args[0]
-        y_offset = args[1]
-        s = args[2:]
+        x_offset = data[0]
+        y_offset = data[1]
+        s = data[2:]
         bits = reduce(lambda x, y: x+y, [bitarray(b) for b in s], [])
         
         for b in range(len(bits)):
@@ -203,7 +203,7 @@ class MemeGui(gtk.Window):
 
 gobject.type_register(MemeGui)
 
-w = MemeGui(8081, 16, 16)
+w = MemeGui(8081, 16, 8)
 w.show_all()
 gtk.main()
 

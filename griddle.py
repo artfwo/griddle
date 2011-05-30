@@ -278,20 +278,22 @@ class Griddle:
             dx_off, dy_off = self.offsets[t]
             x_off = trsign(dev, self.devices[id]) * (vx_off + dx_off)
             y_off = trsign(dev, self.devices[id]) * (vy_off + dy_off)
+            xsize, ysize = trsize(dev, self.devices[id])
             
             if addr.endswith("grid/key"):
-                tr = translate_basic(data, -x_off, -y_off, dev.xsize, dev.ysize)
+                tr = translate_basic(data, -x_off, -y_off, xsize, ysize)
             elif addr.endswith("grid/led/set"):
-                tr = translate_basic(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_basic(data, x_off, y_off, xsize, ysize)
             elif addr.endswith("grid/led/row"):
-                tr = translate_rowcol(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_rowcol(data, x_off, y_off, xsize, ysize)
             elif addr.endswith("grid/led/col"):
-                tr = translate_rowcol(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_rowcol(data, x_off, y_off, xsize, ysize)
             elif addr.endswith("grid/led/map"):
-                tr = translate_basic(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_basic(data, x_off, y_off, xsize, ysize)
             else:
                 tr = data
             
+            print data, tr
             if tr is not None:
                 dev.waffle_send('%s%s' % (dev.target_prefix, addr), tr)
     
@@ -324,6 +326,15 @@ def trsign(a, b):
         return -1
     else:
         return 1
+
+# TODO: cleanup with the callback code
+def trsize(a, b):
+    m = a if isinstance(a, Monome) else b
+    v = a if isinstance(a, Virtual) else b
+    if (m.xsize + m.ysize) > (v.xsize + v.ysize):
+        return m.xsize, m.ysize
+    else:
+        return v.xsize, v.ysize
 
 # key, led, map
 def translate_basic(args, x_off, y_off, xsize, ysize):
