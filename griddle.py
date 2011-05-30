@@ -56,7 +56,7 @@ class Monome(OSCServer, Waffle):
         self.focused = False
         self.target_host = host
         self.target_port = port
-        self.target_prefix = DEFAULT_APP_PREFIX
+        self.target_prefix = GRIDDLE_PREFIX
         
         self.addMsgHandler('default', self.waffle_handler)
         self.addMsgHandler('/sys/connect', self.sys_misc)

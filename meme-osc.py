@@ -30,16 +30,21 @@ class Meme(OSCServer):
         self.register_callbacks(self.prefix)
     
     def sys_port(self, addr, tags, data, client_address):
+        quick_message(self.app_host, self.app_port, "/sys/port", self.app_port)
         self.app_port = data[0]
+        quick_message(self.app_host, self.app_port, "/sys/port", self.app_port)
     
     def sys_host(self, addr, tags, data, client_address):
+        quick_message(self.app_host, self.app_port, "/sys/host", self.app_host)
         self.app_host = data[0]
+        quick_message(self.app_host, self.app_port, "/sys/host", self.app_host)
     
     def sys_prefix(self, addr, tags, data, client_address):
         prefix = data[0]
         self.unregister_callbacks(self.prefix)
         self.prefix = "/%s" % prefix.strip("/")
         self.register_callbacks(self.prefix)
+        quick_message(self.app_host, self.app_port, "/sys/prefix", self.prefix)
     
     def sys_info(self, addr, tags, data, client_address):
         if len(data) == 2:
