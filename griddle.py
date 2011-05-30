@@ -17,7 +17,7 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import time, socket, select, pybonjour, itertools
+import sys, time, socket, select, pybonjour, itertools
 from OSC import OSCClient, OSCServer, OSCMessage, NoCallbackError
 
 REGTYPE = '_monome-osc._udp'
@@ -195,19 +195,19 @@ class MonomeWatcher:
         self.app.monome_discovered(serviceName, self.resolved_host, self.resolved_port)
 
 class Griddle:
-    def __init__(self):
+    def __init__(self, config='griddle.conf'):
         self.devices    = {}
         self.services   = {}
         self.offsets    = {}
         self.transtbl   = {}
         self.watcher = MonomeWatcher(self)
         
-        self.parse_config()
+        self.parse_config(config)
     
-    def parse_config(self):
+    def parse_config(self, filename):
         from ConfigParser import RawConfigParser
         config = RawConfigParser()
-        config.read('griddle.conf')
+        config.read(filename)
         for s in config.sections():
             port = int(config.get(s, 'port'))
             config.remove_option(s, 'port')
@@ -267,27 +267,23 @@ class Griddle:
         return
     
     def universal_callback(self, id, addr, tags, data):
-        if isinstance(self.devices[id], Monome):
-            sign = 1
-        else:
-            sign = -1
         for t in self.transtbl[id]:
+            dev = self.devices[t]
             vx_off, vy_off = self.offsets[id]
             dx_off, dy_off = self.offsets[t]
-            x_off = (sign * vx_off) + dx_off
-            y_off = (sign * vy_off) + dy_off
+            x_off = vx_off + dx_off
+            y_off = vy_off + dy_off
             
-            dev = self.devices[t]
             if addr.endswith("grid/key"):
-                tr = translate_key(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_basic(data, -x_off, -y_off, dev.xsize, dev.ysize)
             elif addr.endswith("grid/led/set"):
-                tr = translate_led(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_basic(data, x_off, y_off, dev.xsize, dev.ysize)
             elif addr.endswith("grid/led/row"):
-                tr = translate_row(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_rowcol(data, x_off, y_off, dev.xsize, dev.ysize)
             elif addr.endswith("grid/led/col"):
-                tr = translate_col(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_rowcol(data, x_off, y_off, dev.xsize, dev.ysize)
             elif addr.endswith("grid/led/map"):
-                tr = translate_map(data, x_off, y_off, dev.xsize, dev.ysize)
+                tr = translate_basic(data, x_off, y_off, dev.xsize, dev.ysize)
             else:
                 tr = data
             
@@ -315,21 +311,16 @@ class Griddle:
         for s in rlist:
             s.close()
 
-def translate_key(args, x_off, y_off, xsize, ysize):
-    x, y, data = args[0], args[1], args[2:]
-    x = x + x_off
-    y = y + y_off
-    if x in range(xsize) and y in range(ysize): return [x, y] + data
-    else: return None
-
-def translate_led(args, x_off, y_off, xsize, ysize):
+# key, led, map
+def translate_basic(args, x_off, y_off, xsize, ysize):
     x, y, data = args[0], args[1], args[2:]
     x = x - x_off
     y = y - y_off
     if x in range(xsize) and y in range(ysize): return [x, y] + data
     else: return None
 
-def translate_row(args, x_off, y_off, xsize, ysize):
+# row, col
+def translate_rowcol(args, x_off, y_off, xsize, ysize):
     x, y, data = args[0], args[1], args[2:]
     x = x - x_off
     y = y - y_off
@@ -340,25 +331,12 @@ def translate_row(args, x_off, y_off, xsize, ysize):
     if x in range(xsize) and y in range(ysize) and len(data)>0: return [x, y] + data
     else: return None
 
-def translate_col(args, x_off, y_off, xsize, ysize):
-    x, y, data = args[0], args[1], args[2:]
-    x = x - x_off
-    y = y - y_off
-    while y < 0:
-        y += 8
-        if len(data) > 0: data.pop(0)
-    data = data[:ysize / 8]
-    if x in range(xsize) and y in range(ysize) and len(data)>0: return [x, y] + data
-    else: return None
+if len(sys.argv) > 1:
+    config = sys.argv[1]
+else:
+    config = "griddle.conf"
 
-def translate_map(args, x_off, y_off, xsize, ysize):
-    x, y, data = args[0], args[1], args[2:]
-    x = x - x_off
-    y = y - y_off
-    if x in range(xsize) and y in range(ysize): return [x, y] + data
-    else: return None
-
-app = Griddle()
+app = Griddle(config)
 try:
     app.run()
 except KeyboardInterrupt:

@@ -1,6 +1,30 @@
 griddle is a splitter/spanner router app for grid devices.
 meme is a gtk monome emulator with arbitrary size support.
 
+griddle acts as a proxy between serialosc and your application. it's designed
+to serve two purposes: create large virtual devices from physical monomes and
+split larger monomes into smaller virtual devices (sizes down to 8 x 8 are
+allowed).
+
+to split a 128/256/512 unit, create several virtual devices in the
+configuration file, each with the appropriate offset and link them to hardware
+device with a zero offset.
+
+to join several devices into a single virtual device, create a virtual device
+in the configuration file with a zero offset, and specify all the linked
+hardware units with the appropriate offsets.
+
+to create a mirror effect (my favourite), use the same config as the one
+for joining, replace all the offsets with zeroes and make sure all your devices
+(virtual and physical) are of the same size.
+
+all the offsets have to be multiples of 8. 
+
+have fun!
+-artfwo
+
+
+
 this repository includes the following third-party modules:
 
 pybonjour (MIT License):
