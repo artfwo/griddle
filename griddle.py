@@ -111,16 +111,24 @@ class VirtualMonome(OSCServer, Waffle):
         self.addMsgHandler('/sys/host', self.sys_host)
         self.addMsgHandler('/sys/prefix', self.sys_prefix)
 
+        self.addMsgHandler('/sys/connect', self.sys_misc)
+        self.addMsgHandler('/sys/disconnect', self.sys_misc)
+        self.addMsgHandler('/sys/rotation', self.sys_misc)
+
         self.app_callback = None
     
+    def sys_misc(self, addr, tags, data, client_address):
+        print "warning: unhandled /sys message in virtual: %s %s" % (addr, data)
+
     def sys_port(self, addr, tags, data, client_address):
         self.waffle_send('/sys/port', self.target_port)
         self.target_port = data[0]
         self.waffle_send('/sys/port', self.target_port)
     
     def sys_host(self, addr, tags, data, client_address):
+        self.waffle_send('/sys/host', self.target_host)
         self.target_host = data[0]
-        # FIXME: respond
+        self.waffle_send('/sys/host', self.target_host)
     
     def sys_prefix(self, addr, tags, data, client_address):
         self.target_prefix = fix_prefix(data[0])
