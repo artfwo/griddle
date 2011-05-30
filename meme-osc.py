@@ -9,17 +9,15 @@ REGTYPE = "_monome-osc._udp"
 NAME_FORMAT = "meme-%d"
 
 def bitarray(b):
-    #return [b>>7&1, b>>6&1, b>>5&1, b>>4&1, b>>3&1, b>>2&1, b>>1&1, b&1]
     return [b&1, b>>1&1, b>>2&1, b>>3&1, b>>4&1, b>>5&1, b>>6&1, b>>7&1]
 
-def quick_message(host, port, path, data, client=None):
+def quick_message(host, port, path, *args):
     msg = OSCMessage(path)
-    [msg.append(d) for d in data]
-    if client is None:
-        client = OSCClient()
+    [msg.append(d) for d in args]
+    client = OSCClient()
 	client.sendto(msg, (host, port), timeout=0)
 
-class Justosc(OSCServer):
+class Meme(OSCServer):
     def __init__(self, port, gui):
         OSCServer.__init__(self, ('localhost', port))
         self.app_port = 8000
@@ -53,21 +51,18 @@ class Justosc(OSCServer):
         else:
             return
         
-        quick_message(host, port, "/sys/port", [port], self.client)
-        quick_message(host, port, "/sys/host", [host], self.client)
-        quick_message(host, port, "/sys/id", ["meme"], self.client)
-        quick_message(host, port, "/sys/prefix", [self.prefix], self.client)
-        #liblo.send(target, "/sys/port", port)
-        #liblo.send(target, "/sys/host", host)
-        #liblo.send(target, "/sys/id", "meme")
-        #liblo.send(target, "/sys/prefix", self.prefix)
+        quick_message(host, port, "/sys/port", port)
+        quick_message(host, port, "/sys/host", host)
+        quick_message(host, port, "/sys/id", "meme")
+        quick_message(host, port, "/sys/prefix", self.prefix)
+        quick_message(host, port, "/sys/size", self.gui.xsize, self.gui.ysize)
     
     def unregister_callbacks(self, prefix):
         self.delMsgHandler("%s/grid/led/set" % prefix)
         self.delMsgHandler("%s/grid/led/map" % prefix)
         self.delMsgHandler("%s/grid/led/row" % prefix)
         self.delMsgHandler("%s/grid/led/col" % prefix)
-        self.addMsgHandler("%s/grid/led/all" % prefix)
+        self.delMsgHandler("%s/grid/led/all" % prefix)
     
     def register_callbacks(self, prefix):
         self.addMsgHandler("%s/grid/led/set" % prefix, self.grid_led_set)
@@ -83,6 +78,7 @@ class Justosc(OSCServer):
         self.addMsgHandler("/sys/info", self.sys_info)
 
     def grid_led_set(self, addr, tags, data, client_address):
+        print "led set", addr, data
         x, y, s = data
         if s == 1:
             self.gui.light_button(x, y)
@@ -129,37 +125,16 @@ class Justosc(OSCServer):
         msg.append(s)
     	self.client.sendto(msg, (self.app_host, self.app_port), timeout=0)
 
-class Meme:
-    def __init__(self, port, gui):
-        self.server = Justosc(port, gui)
-        #self.gui = gui
-        self.sdRef = pybonjour.DNSServiceRegister(name = NAME_FORMAT % port,
-             regtype = REGTYPE,
-             port = port,
-             callBack = self.register_callback)
-    
-    def register_callback(self, sdRef, flags, errorCode, name, regtype, domain):
-        if errorCode == pybonjour.kDNSServiceErr_NoError:
-            print 'Registered service:', name, regtype, domain
-            #self.waffle = Waffle(20000)
-            #self.waffle.start()
-            pass
-    
-    def poll(self):
-        ready = select.select([self.sdRef, self.server], [], [], 0)
-        #print ready
-        if self.sdRef in ready[0]:
-            pybonjour.DNSServiceProcessResult(self.sdRef)
-        if self.server in ready[0]:
-            self.server.handle_request()
-    
-    def close(self):
-        self.sdRef.close()
-
 class MemeGui(gtk.Window):
     def __init__(self, port, xsize, ysize):
         gtk.Window.__init__(self)
-        self.s = Meme(port, self)
+
+        self.meme = Meme(port, self)
+        self.meme_service = pybonjour.DNSServiceRegister(name = NAME_FORMAT % port,
+             regtype = REGTYPE,
+             port = port,
+             callBack = None)
+        
         self.set_title(NAME_FORMAT % port)
         
         self.xsize = xsize
@@ -180,16 +155,18 @@ class MemeGui(gtk.Window):
                 b.connect("clicked", self.button_clicked, x, y)
                 self.unlight_button(x, y)
         
-        gobject.timeout_add(100, self.idle)
+        gobject.timeout_add(10, self.idle)
     
     def idle(self):
-        self.s.poll()
-        #import time
-        #time.sleep(0.001)
+        ready = select.select([self.meme_service, self.meme], [], [], 0)
+        if self.meme_service in ready[0]:
+            pybonjour.DNSServiceProcessResult(self.meme_service)
+        if self.meme in ready[0]:
+            self.meme.handle_request()
         return True
     
     def button_clicked(self, b, x, y):
-        self.s.server.grid_key(x, y, 1)
+        self.meme.grid_key(x, y, 1)
     
     def led_all(self, s):
         if s == 0:
@@ -215,12 +192,13 @@ class MemeGui(gtk.Window):
         b.modify_bg(gtk.STATE_ACTIVE, gtk.gdk.Color("#ffffff"))
     
     def do_delete_event(self, *args):
-        self.s.close()
+        self.meme.close()
+        self.meme_service.close()
         gtk.main_quit()
 
 gobject.type_register(MemeGui)
 
-w = MemeGui(8081, 8, 8)
+w = MemeGui(8081, 16, 16)
 w.show_all()
 gtk.main()
 
