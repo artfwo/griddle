@@ -96,7 +96,7 @@ class Monome(OSCServer, Waffle):
     def sys_prefix(self, addr, tags, data, client_address):
         self.target_prefix = fix_prefix(data[0])
 
-class VirtualMonome(OSCServer, Waffle):
+class Virtual(OSCServer, Waffle):
     def __init__(self, id, xsize, ysize, port=0):
         OSCServer.__init__(self, ('', port))
         self.id = id
@@ -234,7 +234,7 @@ class Griddle:
             self.add_virtual(s, xsize, ysize, port)
     
     def add_virtual(self, name, xsize, ysize, port=0):
-        device = VirtualMonome(name, xsize, ysize, port)
+        device = Virtual(name, xsize, ysize, port)
         self.devices[name] = device
         
         sphost, spport = device.server_address
@@ -269,13 +269,15 @@ class Griddle:
     def universal_callback(self, id, addr, tags, data):
         for t in self.transtbl[id]:
             dev = self.devices[t]
+            
             vx_off, vy_off = self.offsets[id]
             dx_off, dy_off = self.offsets[t]
-            x_off = vx_off + dx_off
-            y_off = vy_off + dy_off
+            x_off = trsign(dev, self.devices[id]) * (vx_off + dx_off)
+            y_off = trsign(dev, self.devices[id]) * (vy_off + dy_off)
             
             if addr.endswith("grid/key"):
                 tr = translate_basic(data, -x_off, -y_off, dev.xsize, dev.ysize)
+                print tr
             elif addr.endswith("grid/led/set"):
                 tr = translate_basic(data, x_off, y_off, dev.xsize, dev.ysize)
             elif addr.endswith("grid/led/row"):
@@ -310,6 +312,15 @@ class Griddle:
             [self.watcher.sdRef])
         for s in rlist:
             s.close()
+
+# autodetect splitting mode
+def trsign(a, b):
+    m = a if isinstance(a, Monome) else b
+    v = a if isinstance(a, Virtual) else b
+    if (m.xsize + m.ysize) > (v.xsize + v.ysize):
+        return -1
+    else:
+        return 1
 
 # key, led, map
 def translate_basic(args, x_off, y_off, xsize, ysize):
