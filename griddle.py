@@ -118,7 +118,8 @@ class VirtualMonome(OSCServer, Waffle):
         self.app_callback = None
     
     def sys_misc(self, addr, tags, data, client_address):
-        print "warning: unhandled /sys message in virtual: %s %s" % (addr, data)
+        #print "/sys message: %s %s" % (addr, data)
+        pass
 
     def sys_port(self, addr, tags, data, client_address):
         self.waffle_send('/sys/port', self.target_port)
@@ -202,7 +203,6 @@ class Griddle:
         self.watcher = MonomeWatcher(self)
         
         self.parse_config()
-        #self.add_virtual("griddle-1", 3333)
     
     def parse_config(self):
         from ConfigParser import RawConfigParser
@@ -247,7 +247,7 @@ class Griddle:
         device.app_callback = self.universal_callback
 
     def monome_discovered(self, serviceName, host, port):
-        name = serviceName.split()[1].strip('()') # take serial
+        name = serviceName.split()[-1].strip('()') # take serial
         if not name in self.offsets: # only take affected devices
             return
         # FIXME: IPV4 and IPv6 are separate services and are resolved twice
@@ -274,8 +274,8 @@ class Griddle:
         for t in self.transtbl[id]:
             vx_off, vy_off = self.offsets[id]
             dx_off, dy_off = self.offsets[t]
-            x_off = sign * (vx_off) + dx_off
-            y_off = sign * (vy_off) + dy_off
+            x_off = (sign * vx_off) + dx_off
+            y_off = (sign * vy_off) + dy_off
             
             dev = self.devices[t]
             if addr.endswith("grid/key"):
