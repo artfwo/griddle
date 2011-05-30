@@ -32,13 +32,16 @@ def fix_prefix(s):
     return '/%s' % s.strip('/')
 
 class Waffle:
-    def waffle_send(self, path, *args):
+    def waffle_send_any(self, host, port, path, *args):
         msg = OSCMessage(path)
         map(msg.append, args)
         # FIXME: self.client is buggy
         # self.client.sendto(msg, (self.target_host, self.target_port), timeout=0)
         client = OSCClient()
-        client.sendto(msg, (self.target_host, self.target_port), timeout=0)
+        client.sendto(msg, (host, port), timeout=0)
+    
+    def waffle_send(self, path, *args):
+        self.waffle_send_any(self.target_host, self.target_port, path, *args)
     
     def waffle_handler(self, addr, tags, data, client_address):
         if addr.startswith(self.target_prefix):
@@ -114,6 +117,8 @@ class Virtual(OSCServer, Waffle):
         self.addMsgHandler('/sys/connect', self.sys_misc)
         self.addMsgHandler('/sys/disconnect', self.sys_misc)
         self.addMsgHandler('/sys/rotation', self.sys_misc)
+        
+        self.addMsgHandler('/sys/info', self.sys_info)
 
         self.app_callback = None
     
@@ -141,13 +146,12 @@ class Virtual(OSCServer, Waffle):
         elif len(data) == 0: host, port = self.target_host, self.target_port
         else: return
         
-        # FIXME: send to any host/port
-        self.waffle_send('/sys/id', self.id)
-        self.waffle_send('/sys/size', self.xsize, self.ysize)
-        self.waffle_send('/sys/host', self.target_host)
-        self.waffle_send('/sys/port', self.target_port)
-        self.waffle_send('/sys/prefix', self.target_prefix)
-        self.waffle_send('/sys/rotation', 0)
+        self.waffle_send_any(host, port, '/sys/id', self.id)
+        self.waffle_send_any(host, port, '/sys/size', self.xsize, self.ysize)
+        self.waffle_send_any(host, port, '/sys/host', self.target_host)
+        self.waffle_send_any(host, port, '/sys/port', self.target_port)
+        self.waffle_send_any(host, port, '/sys/prefix', self.target_prefix)
+        self.waffle_send_any(host, port, '/sys/rotation', 0)
 
 class MonomeWatcher:
     def __init__(self, app):
@@ -277,7 +281,6 @@ class Griddle:
             
             if addr.endswith("grid/key"):
                 tr = translate_basic(data, -x_off, -y_off, dev.xsize, dev.ysize)
-                print tr
             elif addr.endswith("grid/led/set"):
                 tr = translate_basic(data, x_off, y_off, dev.xsize, dev.ysize)
             elif addr.endswith("grid/led/row"):
