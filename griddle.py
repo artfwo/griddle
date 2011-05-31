@@ -71,7 +71,7 @@ class Monome(OSCServer, Waffle):
         self.addMsgHandler('/sys/prefix', self.sys_prefix)
         self.addMsgHandler('/sys/rotation', self.sys_misc)
         
-        self.waffle_send('/sys/host', self.server_address[0])
+        self.waffle_send('/sys/host', 'localhost')
         self.waffle_send('/sys/port', self.server_address[1])
         self.waffle_send('/sys/info')
         
