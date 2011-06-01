@@ -17,7 +17,7 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import sys, time, socket, select, pybonjour, itertools
+import sys, time, socket, select, pybonjour, itertools, math
 from OSC import OSCClient, OSCServer, OSCMessage, NoCallbackError
 
 REGTYPE = '_monome-osc._udp'
@@ -248,7 +248,7 @@ class Griddle:
             port=port,
             callBack=None)
         print "creating %s (%d)" % (name, spport)
-        device.app_callback = self.universal_callback
+        device.app_callback = self.route
 
     def monome_discovered(self, serviceName, host, port):
         name = serviceName.split()[-1].strip('()') # take serial
@@ -260,7 +260,7 @@ class Griddle:
             monome = Monome(name, 'localhost', port)
             print "adding %s (%d)" % (name, port)
             self.devices[name] = monome
-            self.devices[name].app_callback = self.universal_callback
+            self.devices[name].app_callback = self.route
     
     def monome_removed(self, name):
         # FIXME: IPV4 and IPv6 are separate services and are removed twice
@@ -270,32 +270,55 @@ class Griddle:
             del self.devices[name]
         return
     
-    def universal_callback(self, id, addr, tags, data):
-        for t in self.transtbl[id]:
-            dev = self.devices[t]
+    def route(self, source, addr, tags, data):
+        tsign = 1 if len(self.transtbl[source]) > 1 else -1
+        for d in self.transtbl[source]:
+            dest = self.devices[d]
             
-            vx_off, vy_off = self.offsets[id]
-            dx_off, dy_off = self.offsets[t]
-            x_off = trsign(dev, self.devices[id]) * (vx_off + dx_off)
-            y_off = trsign(dev, self.devices[id]) * (vy_off + dy_off)
-            xsize, ysize = trsize(dev, self.devices[id])
+            sxoff, syoff = self.offsets[source]
+            dxoff, dyoff = self.offsets[d]
+            xoff, yoff = tsign * (sxoff + dxoff),  tsign * (syoff + dyoff)
             
-            if addr.endswith("grid/key"):
-                tr = translate_basic(data, -x_off, -y_off, xsize, ysize)
-            elif addr.endswith("grid/led/set"):
-                tr = translate_basic(data, x_off, y_off, xsize, ysize)
-            elif addr.endswith("grid/led/row"):
-                tr = translate_rowcol(data, x_off, y_off, xsize, ysize)
-            elif addr.endswith("grid/led/col"):
-                tr = translate_rowcol(data, x_off, y_off, xsize, ysize)
-            elif addr.endswith("grid/led/map"):
-                tr = translate_basic(data, x_off, y_off, xsize, ysize)
+            # clipping adjustments
+            if tsign == -1:
+                minx = sxoff
+                miny = syoff
+                maxx = sxoff + self.devices[source].xsize
+                maxy = syoff + self.devices[source].ysize
             else:
-                tr = data
+                minx = 0
+                miny = 0
+                maxx = dest.xsize
+                maxy = dest.ysize
             
-            print data, tr
-            if tr is not None:
-                dev.waffle_send('%s%s' % (dev.target_prefix, addr), tr)
+            if addr.endswith("grid/key") or addr.endswith("grid/led/set") or addr.endswith("grid/led/map"):
+                x, y, args = data[0], data[1], data[2:]
+                x, y = x - xoff, y - yoff
+                if minx <= x < maxx and miny <= y < maxy:
+                    dest.waffle_send('%s%s' % (dest.target_prefix, addr), x, y, *args)
+            elif addr.endswith("grid/led/row"):
+                x, y, args = data[0], data[1], data[2:]
+                x, y = x - xoff, y - yoff
+                args, remainder = args[:(maxx - minx) / 8], args[(maxx - minx) / 8:]
+                if minx <= x < maxx and miny <= y < maxy:
+                    dest.waffle_send('%s%s' % (dest.target_prefix, addr), x, y, *args)
+                if len(remainder) > 0:
+                    self.route(source, addr, None, [x+dest.xsize, y]+remainder) # tags=None (ignored)
+            elif addr.endswith("grid/led/col"):
+                x, y, args = data[0], data[1], data[2:]
+                x, y = x - xoff, y - yoff
+                args, remainder = args[:(maxy - miny) / 8], args[(maxy - miny) / 8:]
+                if minx <= x < maxx and miny <= y < maxy:
+                    dest.waffle_send('%s%s' % (dest.target_prefix, addr), x, y, *args)
+                if len(remainder) > 0:
+                    self.route(source, addr, None, [x, y+dest.ysize]+remainder) # tags=None (ignored)
+            # special-case for /led/map in splitter configuration
+            elif addr.endswith("grid/led/all") and tsign == -1:
+                for x in range(minx, maxx, 8):
+                    for y in range(miny, maxy, 8):
+                        self.route(source, "/grid/led/map", None, [x,y]+[0,0,0,0,0,0,0,0]) # tags=None (ignored)
+            else:
+                dest.waffle_send('%s%s' % (dest.target_prefix, addr), data)
     
     def run(self):
         while True:
@@ -317,44 +340,6 @@ class Griddle:
             [self.watcher.sdRef])
         for s in rlist:
             s.close()
-
-# autodetect splitting mode
-def trsign(a, b):
-    m = a if isinstance(a, Monome) else b
-    v = a if isinstance(a, Virtual) else b
-    if (m.xsize + m.ysize) > (v.xsize + v.ysize):
-        return -1
-    else:
-        return 1
-
-# TODO: cleanup with the callback code
-def trsize(a, b):
-    m = a if isinstance(a, Monome) else b
-    v = a if isinstance(a, Virtual) else b
-    if (m.xsize + m.ysize) > (v.xsize + v.ysize):
-        return m.xsize, m.ysize
-    else:
-        return v.xsize, v.ysize
-
-# key, led, map
-def translate_basic(args, x_off, y_off, xsize, ysize):
-    x, y, data = args[0], args[1], args[2:]
-    x = x - x_off
-    y = y - y_off
-    if x in range(xsize) and y in range(ysize): return [x, y] + data
-    else: return None
-
-# row, col
-def translate_rowcol(args, x_off, y_off, xsize, ysize):
-    x, y, data = args[0], args[1], args[2:]
-    x = x - x_off
-    y = y - y_off
-    while x < 0:
-        x += 8
-        if len(data) > 0: data.pop(0)
-    data = data[:xsize / 8]
-    if x in range(xsize) and y in range(ysize) and len(data)>0: return [x, y] + data
-    else: return None
 
 if len(sys.argv) > 1:
     config = sys.argv[1]
