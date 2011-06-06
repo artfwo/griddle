@@ -272,7 +272,14 @@ class Griddle:
     
     def route(self, source, addr, tags, data):
         tsign = 1 if len(self.transtbl[source]) > 1 else -1
-        for d in self.transtbl[source]:
+        
+        # we have to sort devices by offset for correct splitting of row messages
+        # FIXME: need to move all the offset calculation / clipping / tsign stuff to the config parser
+        valid_targets = sorted(set(self.transtbl[source]) & set(self.devices.keys()), key=lambda k: self.offsets[k])
+        valid_targets.reverse()
+        
+        #for d in self.transtbl[source]:
+        for d in valid_targets:
             dest = self.devices[d]
             
             sxoff, syoff = self.offsets[source]
