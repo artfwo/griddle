@@ -275,7 +275,8 @@ class Griddle:
             self.devices[name] = monome
             self.devices[name].app_callback = self.route
     
-    def monome_removed(self, name):
+    def monome_removed(self, serviceName):
+        name = serviceName.split()[-1].strip('()') # take serial
         # FIXME: IPV4 and IPv6 are separate services and are removed twice
         if self.devices.has_key(name):
             self.devices[name].close()
@@ -323,7 +324,8 @@ class Griddle:
                 if minx <= x < maxx and miny <= y < maxy:
                     dest.waffle_send('%s%s' % (dest.prefix, addr), x, y, *args)
                 if len(remainder) > 0:
-                    self.route(source, addr, None, [x+dest.xsize, y]+remainder) # tags=None (ignored)
+                    # tags=None (ignored)
+                    self.route(source, addr, None, [x+dest.xsize, y]+remainder)
             elif addr.endswith("grid/led/col"):
                 x, y, args = data[0], data[1], data[2:]
                 x, y = x - xoff, y - yoff
@@ -331,12 +333,14 @@ class Griddle:
                 if minx <= x < maxx and miny <= y < maxy:
                     dest.waffle_send('%s%s' % (dest.prefix, addr), x, y, *args)
                 if len(remainder) > 0:
-                    self.route(source, addr, None, [x, y+dest.ysize]+remainder) # tags=None (ignored)
+                    # tags=None (ignored)
+                    self.route(source, addr, None, [x, y+dest.ysize]+remainder)
             # special-case for /led/map in splitter configuration
             elif addr.endswith("grid/led/all") and tsign == -1:
                 for x in range(minx, maxx, 8):
                     for y in range(miny, maxy, 8):
-                        self.route(source, "/grid/led/map", None, [x,y]+[0,0,0,0,0,0,0,0]) # tags=None (ignored)
+                        # tags=None (ignored)
+                        self.route(source, "/grid/led/map", None, [x,y]+[0,0,0,0,0,0,0,0])
             else:
                 dest.waffle_send('%s%s' % (dest.prefix, addr), data)
     
@@ -361,12 +365,13 @@ class Griddle:
         for s in rlist:
             s.close()
 
-if len(sys.argv) > 1:
-    config = sys.argv[1]
-else:
-    config = "griddle.conf"
+try:
+    conf_file = sys.argv[1]
+except IndexError:
+    print "need configuration file to run!"
+    sys.exit(1)
 
-app = Griddle(config)
+app = Griddle(conf_file)
 try:
     app.run()
 except KeyboardInterrupt:
