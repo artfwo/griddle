@@ -54,7 +54,7 @@ class Waffle:
 # TODO: /sys/connect
 class Monome(OSCServer, Waffle):
     def __init__(self, id, host, port):
-        OSCServer.__init__(self, ('', 0))
+        OSCServer.__init__(self, ('0.0.0.0', 0))
         self.id = id
         self.focused = False
         self.target_host = host
@@ -101,7 +101,7 @@ class Monome(OSCServer, Waffle):
 
 class Virtual(OSCServer, Waffle):
     def __init__(self, id, xsize, ysize, port=0):
-        OSCServer.__init__(self, ('', port))
+        OSCServer.__init__(self, ('0.0.0.0', port))
         self.id = id
         self.xsize = xsize
         self.ysize = ysize
