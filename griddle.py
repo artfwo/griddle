@@ -56,7 +56,7 @@ class Monome(OSCServer, Waffle):
         OSCServer.__init__(self, ('', 0))
         self.client.connect(address)
         host, port = self.client.socket.getsockname()
-        
+
         self.id = id
         self.focused = False
         self.prefix = GRIDDLE_PREFIX
@@ -103,7 +103,6 @@ class Monome(OSCServer, Waffle):
 class Virtual(OSCServer, Waffle):
     def __init__(self, id, xsize, ysize, port=0):
         OSCServer.__init__(self, ('', port))
-        
         self.id = id
         self.xsize = xsize
         self.ysize = ysize
