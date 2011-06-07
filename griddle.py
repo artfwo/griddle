@@ -1,20 +1,20 @@
 #! /usr/bin/env python
 # -*- Mode: Python; coding: utf-8; indent-tabs-mode: nil; tab-width: 4 -*-
 #
-#    Copyright (C) 2011 Artem Popov <artfwo@gmail.com>
+# Copyright (C) 2011 Artem Popov <artfwo@gmail.com>
 #
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 #
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
-#    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
 import sys, time, socket, select, pybonjour, itertools, math
@@ -22,7 +22,7 @@ from OSC import OSCClient, OSCServer, OSCMessage, NoCallbackError
 
 REGTYPE = '_monome-osc._udp'
 
-DEFAULT_APP_HOST = 'localhost'
+DEFAULT_APP_HOST = '127.0.0.1'
 DEFAULT_APP_PORT = 8000
 DEFAULT_APP_PREFIX = '/monome'
 GRIDDLE_SERVICE_PREFIX = 'griddle'
@@ -35,33 +35,34 @@ class Waffle:
     def waffle_send_any(self, host, port, path, *args):
         msg = OSCMessage(path)
         map(msg.append, args)
-        # FIXME: self.client is buggy
-        # self.client.sendto(msg, (self.target_host, self.target_port), timeout=0)
-        client = OSCClient()
-        client.sendto(msg, (host, port), timeout=0)
+        self.client.sendto(msg, (host, port), timeout=0)
     
     def waffle_send(self, path, *args):
-        self.waffle_send_any(self.target_host, self.target_port, path, *args)
+        msg = OSCMessage(path)
+        map(msg.append, args)
+        self.client.send(msg)
     
     def waffle_handler(self, addr, tags, data, client_address):
-        if addr.startswith(self.target_prefix):
+        if addr.startswith(self.prefix):
             if self.app_callback:
-                self.app_callback(self.id, addr.replace(self.target_prefix, "", 1), tags, data)
+                self.app_callback(self.id, addr.replace(self.prefix, "", 1), tags, data)
         else:
 			raise NoCallbackError(addr)
 
 # TODO: unfocus on host 
 # TODO: /sys/connect
 class Monome(OSCServer, Waffle):
-    def __init__(self, id, host, port):
+    def __init__(self, id, address):
         OSCServer.__init__(self, ('', 0))
+        self.client.connect(address)
+        host, port = self.client.socket.getsockname()
+        
         self.id = id
         self.focused = False
-        self.target_host = host
-        self.target_port = port
-        self.target_prefix = GRIDDLE_PREFIX
+        self.prefix = GRIDDLE_PREFIX
         
         self.addMsgHandler('default', self.waffle_handler)
+        self.addMsgHandler('/sys/info', self.sys_misc)
         self.addMsgHandler('/sys/connect', self.sys_misc)
         self.addMsgHandler('/sys/disconnect', self.sys_misc)
         self.addMsgHandler('/sys/id', self.sys_misc)
@@ -71,9 +72,9 @@ class Monome(OSCServer, Waffle):
         self.addMsgHandler('/sys/prefix', self.sys_prefix)
         self.addMsgHandler('/sys/rotation', self.sys_misc)
         
-        self.waffle_send('/sys/host', 'localhost')
-        self.waffle_send('/sys/port', self.server_address[1])
-        self.waffle_send('/sys/info')
+        self.waffle_send('/sys/host', host)
+        self.waffle_send('/sys/port', port)
+        self.waffle_send('/sys/info', host, self.server_address[1])
         
         self.app_callback = None
     
@@ -97,17 +98,18 @@ class Monome(OSCServer, Waffle):
     
     # prefix confirmation
     def sys_prefix(self, addr, tags, data, client_address):
-        self.target_prefix = fix_prefix(data[0])
+        self.prefix = fix_prefix(data[0])
 
 class Virtual(OSCServer, Waffle):
     def __init__(self, id, xsize, ysize, port=0):
         OSCServer.__init__(self, ('', port))
+        
         self.id = id
         self.xsize = xsize
         self.ysize = ysize
-        self.target_port = DEFAULT_APP_PORT
-        self.target_host = DEFAULT_APP_HOST
-        self.target_prefix = DEFAULT_APP_PREFIX
+        self.app_host = DEFAULT_APP_HOST
+        self.app_port = DEFAULT_APP_PORT
+        self.prefix = DEFAULT_APP_PREFIX
         
         self.addMsgHandler('default', self.waffle_handler)
         self.addMsgHandler('/sys/port', self.sys_port)
@@ -123,35 +125,47 @@ class Virtual(OSCServer, Waffle):
         self.app_callback = None
     
     def sys_misc(self, addr, tags, data, client_address):
-        #print "/sys message: %s %s" % (addr, data)
         pass
 
     def sys_port(self, addr, tags, data, client_address):
-        self.waffle_send('/sys/port', self.target_port)
-        self.target_port = data[0]
-        self.waffle_send('/sys/port', self.target_port)
+        self.waffle_send('/sys/port', self.app_port)
+        self.app_port = data[0]
+        self.waffle_send('/sys/port', self.app_port)
     
     def sys_host(self, addr, tags, data, client_address):
-        self.waffle_send('/sys/host', self.target_host)
-        self.target_host = data[0]
-        self.waffle_send('/sys/host', self.target_host)
+        self.waffle_send('/sys/host', self.app_host)
+        self.app_host = data[0]
+        self.waffle_send('/sys/host', self.app_host)
     
     def sys_prefix(self, addr, tags, data, client_address):
-        self.target_prefix = fix_prefix(data[0])
-        self.waffle_send('/sys/prefix', self.target_port)
+        self.prefix = fix_prefix(data[0])
+        self.waffle_send('/sys/prefix', self.prefix)
     
     def sys_info(self, addr, tags, data, client_address):
         if len(data) == 2: host, port = data
-        elif len(data) == 1: host, port = self.target_host, data[0]
-        elif len(data) == 0: host, port = self.target_host, self.target_port
+        elif len(data) == 1: host, port = self.app_host, data[0]
+        elif len(data) == 0: host, port = self.app_host, self.app_port
         else: return
         
         self.waffle_send_any(host, port, '/sys/id', self.id)
         self.waffle_send_any(host, port, '/sys/size', self.xsize, self.ysize)
-        self.waffle_send_any(host, port, '/sys/host', self.target_host)
-        self.waffle_send_any(host, port, '/sys/port', self.target_port)
-        self.waffle_send_any(host, port, '/sys/prefix', self.target_prefix)
+        self.waffle_send_any(host, port, '/sys/host', self.app_host)
+        self.waffle_send_any(host, port, '/sys/port', self.app_port)
+        self.waffle_send_any(host, port, '/sys/prefix', self.prefix)
         self.waffle_send_any(host, port, '/sys/rotation', 0)
+    
+    # FIXME: we have to redefine these until the client behaviour is figured out 
+    def waffle_send_any(self, host, port, path, *args):
+        msg = OSCMessage(path)
+        map(msg.append, args)
+        client = OSCClient()
+        client.sendto(msg, (host, port), timeout=0)
+    
+    def waffle_send(self, path, *args):
+        msg = OSCMessage(path)
+        map(msg.append, args)
+        client = OSCClient()
+        client.sendto(msg, (self.app_host, self.app_port), timeout=0)
 
 class MonomeWatcher:
     def __init__(self, app):
@@ -254,20 +268,20 @@ class Griddle:
         name = serviceName.split()[-1].strip('()') # take serial
         if not name in self.offsets: # only take affected devices
             return
+        
         # FIXME: IPV4 and IPv6 are separate services and are resolved twice
         if not self.devices.has_key(name):
-            # FIXME: assume localhost due to some local/real hostname weirdness
-            monome = Monome(name, 'localhost', port)
-            print "adding %s (%d)" % (name, port)
+            monome = Monome(name, (host, port))
+            print "%s discovered" % name
             self.devices[name] = monome
             self.devices[name].app_callback = self.route
     
     def monome_removed(self, name):
         # FIXME: IPV4 and IPv6 are separate services and are removed twice
         if self.devices.has_key(name):
-            print "removing %s" % name
             self.devices[name].close()
             del self.devices[name]
+            print "%s removed" % name
         return
     
     def route(self, source, addr, tags, data):
@@ -302,13 +316,13 @@ class Griddle:
                 x, y, args = data[0], data[1], data[2:]
                 x, y = x - xoff, y - yoff
                 if minx <= x < maxx and miny <= y < maxy:
-                    dest.waffle_send('%s%s' % (dest.target_prefix, addr), x, y, *args)
+                    dest.waffle_send('%s%s' % (dest.prefix, addr), x, y, *args)
             elif addr.endswith("grid/led/row"):
                 x, y, args = data[0], data[1], data[2:]
                 x, y = x - xoff, y - yoff
                 args, remainder = args[:(maxx - minx) / 8], args[(maxx - minx) / 8:]
                 if minx <= x < maxx and miny <= y < maxy:
-                    dest.waffle_send('%s%s' % (dest.target_prefix, addr), x, y, *args)
+                    dest.waffle_send('%s%s' % (dest.prefix, addr), x, y, *args)
                 if len(remainder) > 0:
                     self.route(source, addr, None, [x+dest.xsize, y]+remainder) # tags=None (ignored)
             elif addr.endswith("grid/led/col"):
@@ -316,7 +330,7 @@ class Griddle:
                 x, y = x - xoff, y - yoff
                 args, remainder = args[:(maxy - miny) / 8], args[(maxy - miny) / 8:]
                 if minx <= x < maxx and miny <= y < maxy:
-                    dest.waffle_send('%s%s' % (dest.target_prefix, addr), x, y, *args)
+                    dest.waffle_send('%s%s' % (dest.prefix, addr), x, y, *args)
                 if len(remainder) > 0:
                     self.route(source, addr, None, [x, y+dest.ysize]+remainder) # tags=None (ignored)
             # special-case for /led/map in splitter configuration
@@ -325,7 +339,7 @@ class Griddle:
                     for y in range(miny, maxy, 8):
                         self.route(source, "/grid/led/map", None, [x,y]+[0,0,0,0,0,0,0,0]) # tags=None (ignored)
             else:
-                dest.waffle_send('%s%s' % (dest.target_prefix, addr), data)
+                dest.waffle_send('%s%s' % (dest.prefix, addr), data)
     
     def run(self):
         while True:
