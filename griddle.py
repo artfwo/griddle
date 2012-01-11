@@ -225,8 +225,7 @@ class Griddle:
         from ConfigParser import RawConfigParser
         import io
         config = RawConfigParser()
-        with io.open(filename, 'r', encoding='utf_8_sig') as fp:
-            config.readfp(fp)
+        config.readfp(io.open(filename, 'r', encoding='utf_8_sig'))
         for s in config.sections():
             port = int(config.get(s, 'port'))
             config.remove_option(s, 'port')
